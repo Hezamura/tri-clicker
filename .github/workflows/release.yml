@@ -1,0 +1,69 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Build Windows assets
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build portable executable
+        run: npm run tauri -- build --no-bundle
+
+      - name: Package portable zip
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          Compress-Archive `
+            -LiteralPath src-tauri/target/release/tri-clicker.exe `
+            -DestinationPath release/TriClick-Studio-${{ github.ref_name }}-portable.zip `
+            -Force
+
+      - name: Build NSIS installer
+        run: npm run tauri -- build --bundles nsis --ci
+
+      - name: Collect installer
+        shell: pwsh
+        run: |
+          $installer = Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter *.exe | Select-Object -First 1
+          if (-not $installer) {
+            throw "NSIS installer was not generated."
+          }
+          Copy-Item -LiteralPath $installer.FullName -Destination "release/TriClick-Studio-${{ github.ref_name }}-setup.exe" -Force
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: TriClick Studio ${{ github.ref_name }}
+          files: |
+            release/TriClick-Studio-${{ github.ref_name }}-portable.zip
+            release/TriClick-Studio-${{ github.ref_name }}-setup.exe
+          body: |
+            TriClick Studio desktop release.
+
+            Assets:
+            - Portable zip: unzip and run `tri-clicker.exe`
+            - Setup exe: Windows installer
