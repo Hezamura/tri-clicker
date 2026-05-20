@@ -4,23 +4,19 @@ import {
   Bell,
   CircleDot,
   ClipboardList,
-  Clock3,
   Copy,
-  Crosshair,
   Download,
   Gauge,
   Keyboard,
   Languages,
   ListChecks,
   Minimize2,
-  Moon,
   MousePointerClick,
   Palette,
   Pause,
   Play,
   Plus,
   Radio,
-  RefreshCw,
   Save,
   Settings2,
   SlidersHorizontal,
@@ -43,12 +39,21 @@ type FontName = "MiSans" | "System" | "Serif" | "Mono" | "Custom";
 type ClickMode = "single" | "double" | "hold" | "burst" | "sequence";
 type MouseButtonName = "Left" | "Right" | "Middle";
 type TabName = "profiles" | "recording" | "schedule" | "settings";
+type StepAction =
+  | "click"
+  | "move"
+  | "key"
+  | "keyDown"
+  | "keyUp"
+  | "mouseDown"
+  | "mouseUp"
+  | "wheel";
 
 type Translation = Record<string, string>;
 
 type ClickStep = {
   id: string;
-  action: "click" | "move" | "key";
+  action: StepAction;
   button: MouseButtonName;
   x: number;
   y: number;
@@ -133,6 +138,13 @@ type BackupPayload = {
   hotkeys: HotkeyConfig;
 };
 
+type RecordingPayload = {
+  version: number;
+  exportedAt: string;
+  name: string;
+  events: RecordedInput[];
+};
+
 const translations: Record<Language, Translation> = {
   zh: {
     app: "TriClick Studio",
@@ -182,6 +194,15 @@ const translations: Record<Language, Translation> = {
     events: "事件",
     noRecording: "还没有录制事件",
     recordingHint: "按录制后操作鼠标键盘",
+    exportRecording: "导出录制",
+    importRecording: "导入录制",
+    applyRecordingSequence: "转为当前序列",
+    saveRecordingProfile: "另存为配置",
+    recordingReady: "录制文件已导出",
+    recordingLoaded: "录制文件已导入",
+    recordingImportFailed: "录制文件无法导入",
+    recordingConverted: "录制已转为当前序列",
+    recordingProfileCreated: "已从录制创建配置",
     playbackSpeed: "播放速度",
     schedules: "计划任务",
     addSchedule: "添加计划",
@@ -226,6 +247,11 @@ const translations: Record<Language, Translation> = {
     stepClick: "点击",
     stepMove: "移动",
     stepKey: "按键",
+    stepKeyDown: "按下键",
+    stepKeyUp: "松开键",
+    stepMouseDown: "按下鼠标",
+    stepMouseUp: "松开鼠标",
+    stepWheel: "滚轮",
     delay: "延迟",
     key: "键",
     simulated: "浏览器预览模式，桌面命令会在 Tauri 中执行",
@@ -278,6 +304,15 @@ const translations: Record<Language, Translation> = {
     events: "イベント",
     noRecording: "記録イベントはまだありません",
     recordingHint: "記録中にマウスとキーボードを操作",
+    exportRecording: "記録を書き出す",
+    importRecording: "記録を読み込む",
+    applyRecordingSequence: "現在のシーケンスへ",
+    saveRecordingProfile: "設定として保存",
+    recordingReady: "記録を書き出しました",
+    recordingLoaded: "記録を読み込みました",
+    recordingImportFailed: "記録ファイルを読み込めません",
+    recordingConverted: "記録を現在のシーケンスへ変換しました",
+    recordingProfileCreated: "記録から設定を作成しました",
     playbackSpeed: "再生速度",
     schedules: "予定タスク",
     addSchedule: "予定を追加",
@@ -322,6 +357,11 @@ const translations: Record<Language, Translation> = {
     stepClick: "クリック",
     stepMove: "移動",
     stepKey: "キー",
+    stepKeyDown: "キー押下",
+    stepKeyUp: "キー解放",
+    stepMouseDown: "マウス押下",
+    stepMouseUp: "マウス解放",
+    stepWheel: "ホイール",
     delay: "遅延",
     key: "キー",
     simulated: "ブラウザプレビューです。デスクトップ操作は Tauri で実行されます",
@@ -374,6 +414,15 @@ const translations: Record<Language, Translation> = {
     events: "Events",
     noRecording: "No recorded events yet",
     recordingHint: "Use mouse and keyboard while recording",
+    exportRecording: "Export recording",
+    importRecording: "Import recording",
+    applyRecordingSequence: "Use as sequence",
+    saveRecordingProfile: "Save as profile",
+    recordingReady: "Recording exported",
+    recordingLoaded: "Recording imported",
+    recordingImportFailed: "Could not import recording",
+    recordingConverted: "Recording applied to current sequence",
+    recordingProfileCreated: "Profile created from recording",
     playbackSpeed: "Playback speed",
     schedules: "Scheduled tasks",
     addSchedule: "Add task",
@@ -418,6 +467,11 @@ const translations: Record<Language, Translation> = {
     stepClick: "Click",
     stepMove: "Move",
     stepKey: "Key",
+    stepKeyDown: "Key down",
+    stepKeyUp: "Key up",
+    stepMouseDown: "Mouse down",
+    stepMouseUp: "Mouse up",
+    stepWheel: "Wheel",
     delay: "Delay",
     key: "Key",
     simulated: "Browser preview mode. Desktop commands run inside Tauri.",
@@ -447,6 +501,17 @@ const modeLabels: Record<ClickMode, keyof Translation> = {
   hold: "holdMode",
   burst: "burstMode",
   sequence: "sequence",
+};
+
+const stepActionLabels: Record<StepAction, keyof Translation> = {
+  click: "stepClick",
+  move: "stepMove",
+  key: "stepKey",
+  keyDown: "stepKeyDown",
+  keyUp: "stepKeyUp",
+  mouseDown: "stepMouseDown",
+  mouseUp: "stepMouseUp",
+  wheel: "stepWheel",
 };
 
 const buttonLabels: Record<MouseButtonName, keyof Translation> = {
@@ -581,10 +646,98 @@ const isBackupPayload = (value: unknown): value is BackupPayload => {
   );
 };
 
+const isRecordedInput = (value: unknown): value is RecordedInput => {
+  if (!value || typeof value !== "object") return false;
+  const event = value as Partial<RecordedInput>;
+  return (
+    typeof event.kind === "string" &&
+    typeof event.detail === "string" &&
+    typeof event.delayMs === "number" &&
+    typeof event.timestampMs === "number" &&
+    (event.x === undefined || typeof event.x === "number") &&
+    (event.y === undefined || typeof event.y === "number")
+  );
+};
+
+const isRecordingPayload = (value: unknown): value is RecordingPayload => {
+  if (!value || typeof value !== "object") return false;
+  const recording = value as Partial<RecordingPayload>;
+  return (
+    typeof recording.name === "string" &&
+    Array.isArray(recording.events) &&
+    recording.events.length <= 10_000 &&
+    recording.events.every(isRecordedInput)
+  );
+};
+
+const downloadJson = (fileName: string, value: unknown) => {
+  const blob = new Blob([JSON.stringify(value, null, 2)], {
+    type: "application/json",
+  });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+};
+
 const comboToString = (combo: string[]) => combo.join("+");
 
 const clampNumber = (value: number, min: number, max: number) =>
   Number.isFinite(value) ? Math.min(Math.max(value, min), max) : min;
+
+const actionUsesKey = (action: StepAction) =>
+  action === "key" || action === "keyDown" || action === "keyUp" || action === "wheel";
+
+const actionUsesPosition = (action: StepAction) =>
+  action === "click" || action === "move" || action === "mouseDown" || action === "mouseUp";
+
+const actionUsesHold = (action: StepAction) => action === "click" || action === "key";
+
+const buttonFromDetail = (detail: string, fallback: MouseButtonName): MouseButtonName => {
+  if (detail === "Right") return "Right";
+  if (detail === "Middle") return "Middle";
+  if (detail === "Left") return "Left";
+  return fallback;
+};
+
+const recordingToSequence = (events: RecordedInput[], base: Profile): ClickStep[] => {
+  let lastX = base.x;
+  let lastY = base.y;
+  return events.map((event) => {
+    if (typeof event.x === "number") lastX = event.x;
+    if (typeof event.y === "number") lastY = event.y;
+
+    const step: ClickStep = {
+      id: uid("step"),
+      action: "move",
+      button: base.button,
+      x: Math.round(lastX),
+      y: Math.round(lastY),
+      delayMs: clampNumber(Math.round(event.delayMs), 0, 3_600_000),
+      holdMs: base.holdMs,
+      key: "Space",
+    };
+
+    switch (event.kind) {
+      case "keyPress":
+        return { ...step, action: "keyDown", key: event.detail };
+      case "keyRelease":
+        return { ...step, action: "keyUp", key: event.detail };
+      case "buttonPress":
+        return { ...step, action: "mouseDown", button: buttonFromDetail(event.detail, base.button) };
+      case "buttonRelease":
+        return { ...step, action: "mouseUp", button: buttonFromDetail(event.detail, base.button) };
+      case "wheel":
+        return { ...step, action: "wheel", key: event.detail };
+      default:
+        return { ...step, action: "move" };
+    }
+  });
+};
 
 const normalizeBrowserKey = (key: string) => {
   if (key === " ") return "Space";
@@ -634,6 +787,7 @@ function App() {
   const [tickCount, setTickCount] = useState(0);
   const [previewNotice, setPreviewNotice] = useState(!isTauriRuntime());
   const backupInputRef = useRef<HTMLInputElement>(null);
+  const recordingInputRef = useRef<HTMLInputElement>(null);
 
   const t = translations[settings.language];
   const activeProfile = useMemo(
@@ -693,17 +847,7 @@ function App() {
       settings,
       hotkeys,
     };
-    const blob = new Blob([JSON.stringify(backup, null, 2)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `triclick-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    downloadJson(`triclick-backup-${new Date().toISOString().slice(0, 10)}.json`, backup);
     log(t.backupReady);
   }, [activeProfileId, hotkeys, log, profiles, schedules, settings, t.backupReady]);
 
@@ -818,6 +962,61 @@ function App() {
     },
     [activeProfile],
   );
+
+  const exportRecording = useCallback(() => {
+    if (!recorded.length) return;
+    const payload: RecordingPayload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      name: activeProfile?.name ?? "TriClick Recording",
+      events: recorded,
+    };
+    downloadJson(`triclick-recording-${new Date().toISOString().slice(0, 10)}.json`, payload);
+    log(t.recordingReady);
+  }, [activeProfile?.name, log, recorded, t.recordingReady]);
+
+  const importRecording = useCallback(
+    async (file: File) => {
+      try {
+        const payload = JSON.parse(await file.text()) as unknown;
+        if (!isRecordingPayload(payload)) {
+          throw new Error("Invalid recording payload.");
+        }
+        setRecorded(payload.events);
+        log(t.recordingLoaded);
+      } catch {
+        log(t.recordingImportFailed);
+      }
+    },
+    [log, t.recordingImportFailed, t.recordingLoaded],
+  );
+
+  const applyRecordingToSequence = useCallback(() => {
+    if (!activeProfile || !recorded.length) return;
+    updateActiveProfile({
+      mode: "sequence",
+      sequence: recordingToSequence(recorded, activeProfile),
+    });
+    setActiveTab("profiles");
+    log(t.recordingConverted);
+  }, [activeProfile, log, recorded, t.recordingConverted, updateActiveProfile]);
+
+  const saveRecordingAsProfile = useCallback(() => {
+    if (!activeProfile || !recorded.length) return;
+    const next: Profile = {
+      ...activeProfile,
+      id: uid("profile"),
+      name: `${activeProfile.name} Recording`,
+      mode: "sequence",
+      count: 1,
+      repeatForever: false,
+      sequence: recordingToSequence(recorded, activeProfile),
+    };
+    setProfiles((items) => [...items, next]);
+    setActiveProfileId(next.id);
+    setActiveTab("profiles");
+    log(t.recordingProfileCreated);
+  }, [activeProfile, log, recorded, t.recordingProfileCreated]);
 
   const addProfile = () => {
     const base = activeProfile ?? defaultProfiles[0];
@@ -1268,26 +1467,36 @@ function App() {
                         updateStep(step.id, { action: event.target.value as ClickStep["action"] })
                       }
                     >
-                      <option value="click">{t.stepClick}</option>
-                      <option value="move">{t.stepMove}</option>
-                      <option value="key">{t.stepKey}</option>
+                      {(Object.keys(stepActionLabels) as StepAction[]).map((action) => (
+                        <option key={action} value={action}>
+                          {t[stepActionLabels[action]]}
+                        </option>
+                      ))}
                     </select>
                     <input
                       value={step.key}
-                      disabled={step.action !== "key"}
+                      disabled={!actionUsesKey(step.action)}
                       onChange={(event) => updateStep(step.id, { key: event.target.value })}
                     />
                     <input
                       type="number"
                       value={step.x}
-                      disabled={step.action === "key"}
+                      disabled={!actionUsesPosition(step.action)}
                       onChange={(event) => updateStep(step.id, { x: Number(event.target.value) })}
                     />
                     <input
                       type="number"
                       value={step.y}
-                      disabled={step.action === "key"}
+                      disabled={!actionUsesPosition(step.action)}
                       onChange={(event) => updateStep(step.id, { y: Number(event.target.value) })}
+                    />
+                    <input
+                      type="number"
+                      value={step.holdMs}
+                      disabled={!actionUsesHold(step.action)}
+                      onChange={(event) =>
+                        updateStep(step.id, { holdMs: Number(event.target.value) })
+                      }
                     />
                     <input
                       type="number"
@@ -1342,6 +1551,37 @@ function App() {
                   <span>{t.clear}</span>
                 </button>
               </div>
+              <div className="macro-actions">
+                <button onClick={exportRecording} disabled={!recorded.length}>
+                  <Download size={16} />
+                  <span>{t.exportRecording}</span>
+                </button>
+                <button onClick={() => recordingInputRef.current?.click()}>
+                  <Upload size={16} />
+                  <span>{t.importRecording}</span>
+                </button>
+                <button onClick={applyRecordingToSequence} disabled={!recorded.length}>
+                  <Wand2 size={16} />
+                  <span>{t.applyRecordingSequence}</span>
+                </button>
+                <button onClick={saveRecordingAsProfile} disabled={!recorded.length}>
+                  <Save size={16} />
+                  <span>{t.saveRecordingProfile}</span>
+                </button>
+              </div>
+              <input
+                ref={recordingInputRef}
+                className="backup-input"
+                type="file"
+                accept="application/json,.json"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) {
+                    void importRecording(file);
+                  }
+                }}
+              />
             </section>
 
             <section className="panel event-panel">

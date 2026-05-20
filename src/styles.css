@@ -578,7 +578,7 @@ input[type="color"] {
 
 .sequence-row {
   display: grid;
-  grid-template-columns: 126px minmax(80px, 1fr) 92px 92px 110px 38px;
+  grid-template-columns: 136px minmax(86px, 1fr) 86px 86px 96px 104px 38px;
   gap: 8px;
   align-items: center;
 }
@@ -606,6 +606,26 @@ input[type="color"] {
 .record-circle {
   border-color: color-mix(in srgb, var(--accent) 72%, var(--line));
   background: color-mix(in srgb, var(--accent) 22%, var(--button));
+}
+
+.macro-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.macro-actions button {
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 0 12px;
+}
+
+.macro-actions span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .event-list {
@@ -883,6 +903,10 @@ input[type="color"] {
 
   .sequence-row,
   .task-row {
+    grid-template-columns: 1fr;
+  }
+
+  .macro-actions {
     grid-template-columns: 1fr;
   }
 

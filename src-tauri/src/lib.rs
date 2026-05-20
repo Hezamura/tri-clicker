@@ -541,9 +541,38 @@ fn run_sequence(sequence: &[ClickStep], stop_flag: &AtomicBool) -> Result<(), St
                     tap_key(key_name)?;
                 }
             }
+            "keyDown" => {
+                if let Some(key_name) = &step.key {
+                    press_key(key_name)?;
+                }
+            }
+            "keyUp" => {
+                if let Some(key_name) = &step.key {
+                    release_key(key_name)?;
+                }
+            }
             "move" => {
                 if let (Some(x), Some(y)) = (step.x, step.y) {
                     simulate(&EventType::MouseMove { x, y }).map_err(simulate_error)?;
+                }
+            }
+            "mouseDown" => {
+                if let (Some(x), Some(y)) = (step.x, step.y) {
+                    simulate(&EventType::MouseMove { x, y }).map_err(simulate_error)?;
+                }
+                let button = parse_button(&step.button);
+                simulate(&EventType::ButtonPress(button)).map_err(simulate_error)?;
+            }
+            "mouseUp" => {
+                if let (Some(x), Some(y)) = (step.x, step.y) {
+                    simulate(&EventType::MouseMove { x, y }).map_err(simulate_error)?;
+                }
+                let button = parse_button(&step.button);
+                simulate(&EventType::ButtonRelease(button)).map_err(simulate_error)?;
+            }
+            "wheel" => {
+                if let Some(detail) = &step.key {
+                    simulate_wheel(detail)?;
                 }
             }
             _ => {
@@ -586,12 +615,7 @@ fn replay_input(event: &RecordedInput) -> Result<(), String> {
             }
         }
         "wheel" => {
-            let parts: Vec<_> = event.detail.split(',').collect();
-            if parts.len() == 2 {
-                let delta_x = parts[0].parse::<i64>().unwrap_or(0);
-                let delta_y = parts[1].parse::<i64>().unwrap_or(0);
-                simulate(&EventType::Wheel { delta_x, delta_y }).map_err(simulate_error)?;
-            }
+            simulate_wheel(&event.detail)?;
         }
         _ => {}
     }
@@ -666,10 +690,31 @@ fn button_to_string(button: Button) -> String {
 }
 
 fn tap_key(key_name: &str) -> Result<(), String> {
+    press_key(key_name)?;
+    thread::sleep(Duration::from_millis(18));
+    release_key(key_name)
+}
+
+fn press_key(key_name: &str) -> Result<(), String> {
     if let Some(key) = parse_key(key_name) {
         simulate(&EventType::KeyPress(key)).map_err(simulate_error)?;
-        thread::sleep(Duration::from_millis(18));
+    }
+    Ok(())
+}
+
+fn release_key(key_name: &str) -> Result<(), String> {
+    if let Some(key) = parse_key(key_name) {
         simulate(&EventType::KeyRelease(key)).map_err(simulate_error)?;
+    }
+    Ok(())
+}
+
+fn simulate_wheel(detail: &str) -> Result<(), String> {
+    let parts: Vec<_> = detail.split(',').collect();
+    if parts.len() == 2 {
+        let delta_x = parts[0].parse::<i64>().unwrap_or(0);
+        let delta_y = parts[1].parse::<i64>().unwrap_or(0);
+        simulate(&EventType::Wheel { delta_x, delta_y }).map_err(simulate_error)?;
     }
     Ok(())
 }
