@@ -67,10 +67,12 @@ impl Default for HotkeyConfig {
 struct ClickRunConfig {
     button: String,
     mode: String,
+    tap_key: String,
     interval_ms: u64,
     initial_delay_ms: u64,
     count: u32,
     repeat_forever: bool,
+    max_duration_ms: u64,
     hold_ms: u64,
     jitter_ms: u64,
     random_radius: i32,
@@ -179,9 +181,17 @@ fn start_clicker(
         }
 
         let mut completed = 0u32;
+        let started_at = Instant::now();
+        let max_duration =
+            (config.max_duration_ms > 0).then(|| Duration::from_millis(config.max_duration_ms));
         loop {
             if stop_flag.load(Ordering::SeqCst) {
                 break;
+            }
+            if let Some(limit) = max_duration {
+                if started_at.elapsed() >= limit {
+                    break;
+                }
             }
             if !config.repeat_forever && completed >= config.count {
                 break;
@@ -202,7 +212,15 @@ fn start_clicker(
             completed = completed.saturating_add(1);
             let _ = app.emit("tri://tick", completed);
             let interval = next_interval(&config);
-            sleep_interruptible(Duration::from_millis(interval), &stop_flag);
+            let wait = if let Some(limit) = max_duration {
+                limit
+                    .checked_sub(started_at.elapsed())
+                    .map(|remaining| remaining.min(Duration::from_millis(interval)))
+                    .unwrap_or_default()
+            } else {
+                Duration::from_millis(interval)
+            };
+            sleep_interruptible(wait, &stop_flag);
         }
 
         if let Ok(mut slot) = state_for_thread.click_stop.lock() {
@@ -508,9 +526,14 @@ fn run_click_mode(config: &ClickRunConfig, stop_flag: &AtomicBool) -> Result<(),
             }
             Ok(())
         }
+        "keyTap" => perform_key_tap(config, stop_flag),
         "sequence" => run_sequence(&config.sequence, stop_flag),
         _ => perform_click(config, stop_flag),
     }
+}
+
+fn perform_key_tap(config: &ClickRunConfig, stop_flag: &AtomicBool) -> Result<(), String> {
+    tap_key_for_duration(&config.tap_key, config.hold_ms.max(12), stop_flag)
 }
 
 fn perform_click(config: &ClickRunConfig, stop_flag: &AtomicBool) -> Result<(), String> {
@@ -538,7 +561,7 @@ fn run_sequence(sequence: &[ClickStep], stop_flag: &AtomicBool) -> Result<(), St
         match step.action.as_str() {
             "key" => {
                 if let Some(key_name) = &step.key {
-                    tap_key(key_name)?;
+                    tap_key_for_duration(key_name, step.hold_ms.max(12), stop_flag)?;
                 }
             }
             "keyDown" => {
@@ -689,10 +712,16 @@ fn button_to_string(button: Button) -> String {
     }
 }
 
-fn tap_key(key_name: &str) -> Result<(), String> {
-    press_key(key_name)?;
-    thread::sleep(Duration::from_millis(18));
-    release_key(key_name)
+fn tap_key_for_duration(
+    key_name: &str,
+    hold_ms: u64,
+    stop_flag: &AtomicBool,
+) -> Result<(), String> {
+    let key = parse_key(key_name)
+        .ok_or_else(|| format!("Unsupported key for input simulation: {key_name}"))?;
+    simulate(&EventType::KeyPress(key)).map_err(simulate_error)?;
+    sleep_interruptible(Duration::from_millis(hold_ms), stop_flag);
+    simulate(&EventType::KeyRelease(key)).map_err(simulate_error)
 }
 
 fn press_key(key_name: &str) -> Result<(), String> {
@@ -769,12 +798,37 @@ fn parse_key(key_name: &str) -> Option<Key> {
         "F10" => Some(Key::F10),
         "F11" => Some(Key::F11),
         "F12" => Some(Key::F12),
+        "CTRL" | "CONTROL" => Some(Key::ControlLeft),
+        "SHIFT" => Some(Key::ShiftLeft),
+        "ALT" => Some(Key::Alt),
+        "META" | "WIN" | "CMD" | "COMMAND" => Some(Key::MetaLeft),
         "ESCAPE" | "ESC" => Some(Key::Escape),
         "SPACE" => Some(Key::Space),
         "TAB" => Some(Key::Tab),
         "ENTER" | "RETURN" => Some(Key::Return),
         "BACKSPACE" => Some(Key::Backspace),
         "DELETE" => Some(Key::Delete),
+        "HOME" => Some(Key::Home),
+        "END" => Some(Key::End),
+        "INSERT" => Some(Key::Insert),
+        "PAGEUP" => Some(Key::PageUp),
+        "PAGEDOWN" => Some(Key::PageDown),
+        "CAPSLOCK" => Some(Key::CapsLock),
+        "PRINTSCREEN" => Some(Key::PrintScreen),
+        "SCROLLLOCK" => Some(Key::ScrollLock),
+        "PAUSE" => Some(Key::Pause),
+        "NUMLOCK" => Some(Key::NumLock),
+        "`" | "BACKQUOTE" => Some(Key::BackQuote),
+        "-" | "MINUS" => Some(Key::Minus),
+        "=" | "EQUAL" => Some(Key::Equal),
+        "[" | "LEFTBRACKET" => Some(Key::LeftBracket),
+        "]" | "RIGHTBRACKET" => Some(Key::RightBracket),
+        ";" | "SEMICOLON" => Some(Key::SemiColon),
+        "'" | "QUOTE" => Some(Key::Quote),
+        "\\" | "BACKSLASH" => Some(Key::BackSlash),
+        "," | "COMMA" => Some(Key::Comma),
+        "." | "DOT" | "PERIOD" => Some(Key::Dot),
+        "/" | "SLASH" => Some(Key::Slash),
         "UP" => Some(Key::UpArrow),
         "DOWN" => Some(Key::DownArrow),
         "LEFTARROW" | "ARROWLEFT" => Some(Key::LeftArrow),

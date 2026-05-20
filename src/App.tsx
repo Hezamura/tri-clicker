@@ -2,6 +2,8 @@ import {
   AlarmClock,
   BadgeCheck,
   Bell,
+  ChevronDown,
+  ChevronUp,
   CircleDot,
   ClipboardList,
   Copy,
@@ -34,9 +36,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 
 type Language = "zh" | "ja" | "en";
-type ThemeName = "graphite" | "sakura" | "forest" | "paper";
+type ThemeName = "cyberpunk" | "graphite" | "sakura" | "forest" | "paper";
 type FontName = "MiSans" | "System" | "Serif" | "Mono" | "Custom";
-type ClickMode = "single" | "double" | "hold" | "burst" | "sequence";
+type ClickMode = "single" | "double" | "hold" | "burst" | "keyTap" | "sequence";
 type MouseButtonName = "Left" | "Right" | "Middle";
 type TabName = "profiles" | "recording" | "schedule" | "settings";
 type StepAction =
@@ -72,10 +74,12 @@ type Profile = {
   initialDelayMs: number;
   count: number;
   repeatForever: boolean;
+  maxDurationMs: number;
   holdMs: number;
   jitterMs: number;
   randomRadius: number;
   burstSize: number;
+  tapKey: string;
   targetMode: "current" | "fixed";
   x: number;
   y: number;
@@ -169,12 +173,14 @@ const translations: Record<Language, Translation> = {
     button: "按键",
     interval: "间隔",
     count: "次数",
+    runDuration: "运行上限",
     forever: "无限循环",
     initialDelay: "启动延迟",
     hold: "按住",
     jitter: "随机抖动",
     radius: "随机半径",
     burst: "连发数量",
+    tapKey: "连按按键",
     target: "目标",
     currentCursor: "当前光标",
     fixedPoint: "固定坐标",
@@ -184,6 +190,7 @@ const translations: Record<Language, Translation> = {
     double: "双击",
     holdMode: "长按",
     burstMode: "连发",
+    keyTapMode: "键盘连按",
     sequence: "序列",
     left: "左键",
     right: "右键",
@@ -196,13 +203,21 @@ const translations: Record<Language, Translation> = {
     recordingHint: "按录制后操作鼠标键盘",
     exportRecording: "导出录制",
     importRecording: "导入录制",
+    optimizeRecording: "优化录制",
     applyRecordingSequence: "转为当前序列",
     saveRecordingProfile: "另存为配置",
     recordingReady: "录制文件已导出",
     recordingLoaded: "录制文件已导入",
     recordingImportFailed: "录制文件无法导入",
+    recordingOptimized: "录制已优化，移除 {count} 个事件",
+    recordingClean: "录制已经足够干净",
     recordingConverted: "录制已转为当前序列",
     recordingProfileCreated: "已从录制创建配置",
+    duration: "时长",
+    moves: "移动",
+    keysStat: "键盘",
+    mouseStat: "鼠标",
+    cps: "CPS",
     playbackSpeed: "播放速度",
     schedules: "计划任务",
     addSchedule: "添加计划",
@@ -240,6 +255,7 @@ const translations: Record<Language, Translation> = {
     saturday: "六",
     sunday: "日",
     graph: "石墨",
+    cyberpunk: "赛博朋克",
     sakura: "樱色",
     forest: "森林",
     paper: "纸面",
@@ -252,6 +268,8 @@ const translations: Record<Language, Translation> = {
     stepMouseDown: "按下鼠标",
     stepMouseUp: "松开鼠标",
     stepWheel: "滚轮",
+    moveUp: "上移",
+    moveDown: "下移",
     delay: "延迟",
     key: "键",
     simulated: "浏览器预览模式，桌面命令会在 Tauri 中执行",
@@ -279,12 +297,14 @@ const translations: Record<Language, Translation> = {
     button: "ボタン",
     interval: "間隔",
     count: "回数",
+    runDuration: "実行上限",
     forever: "無限ループ",
     initialDelay: "開始遅延",
     hold: "保持",
     jitter: "ランダム揺れ",
     radius: "ランダム範囲",
     burst: "連打数",
+    tapKey: "連打キー",
     target: "対象",
     currentCursor: "現在位置",
     fixedPoint: "固定座標",
@@ -294,6 +314,7 @@ const translations: Record<Language, Translation> = {
     double: "ダブル",
     holdMode: "長押し",
     burstMode: "連打",
+    keyTapMode: "キー連打",
     sequence: "シーケンス",
     left: "左",
     right: "右",
@@ -306,13 +327,21 @@ const translations: Record<Language, Translation> = {
     recordingHint: "記録中にマウスとキーボードを操作",
     exportRecording: "記録を書き出す",
     importRecording: "記録を読み込む",
+    optimizeRecording: "記録を最適化",
     applyRecordingSequence: "現在のシーケンスへ",
     saveRecordingProfile: "設定として保存",
     recordingReady: "記録を書き出しました",
     recordingLoaded: "記録を読み込みました",
     recordingImportFailed: "記録ファイルを読み込めません",
+    recordingOptimized: "記録を最適化し、{count} 件を削除しました",
+    recordingClean: "記録はすでに整理されています",
     recordingConverted: "記録を現在のシーケンスへ変換しました",
     recordingProfileCreated: "記録から設定を作成しました",
+    duration: "時間",
+    moves: "移動",
+    keysStat: "キー",
+    mouseStat: "マウス",
+    cps: "CPS",
     playbackSpeed: "再生速度",
     schedules: "予定タスク",
     addSchedule: "予定を追加",
@@ -350,6 +379,7 @@ const translations: Record<Language, Translation> = {
     saturday: "土",
     sunday: "日",
     graph: "グラファイト",
+    cyberpunk: "サイバーパンク",
     sakura: "桜",
     forest: "森",
     paper: "紙",
@@ -362,6 +392,8 @@ const translations: Record<Language, Translation> = {
     stepMouseDown: "マウス押下",
     stepMouseUp: "マウス解放",
     stepWheel: "ホイール",
+    moveUp: "上へ",
+    moveDown: "下へ",
     delay: "遅延",
     key: "キー",
     simulated: "ブラウザプレビューです。デスクトップ操作は Tauri で実行されます",
@@ -389,12 +421,14 @@ const translations: Record<Language, Translation> = {
     button: "Button",
     interval: "Interval",
     count: "Count",
+    runDuration: "Run limit",
     forever: "Loop",
     initialDelay: "Start delay",
     hold: "Hold",
     jitter: "Jitter",
     radius: "Random radius",
     burst: "Burst size",
+    tapKey: "Tap key",
     target: "Target",
     currentCursor: "Current cursor",
     fixedPoint: "Fixed point",
@@ -404,6 +438,7 @@ const translations: Record<Language, Translation> = {
     double: "Double",
     holdMode: "Hold",
     burstMode: "Burst",
+    keyTapMode: "Key tap",
     sequence: "Sequence",
     left: "Left",
     right: "Right",
@@ -416,13 +451,21 @@ const translations: Record<Language, Translation> = {
     recordingHint: "Use mouse and keyboard while recording",
     exportRecording: "Export recording",
     importRecording: "Import recording",
+    optimizeRecording: "Optimize recording",
     applyRecordingSequence: "Use as sequence",
     saveRecordingProfile: "Save as profile",
     recordingReady: "Recording exported",
     recordingLoaded: "Recording imported",
     recordingImportFailed: "Could not import recording",
+    recordingOptimized: "Recording optimized, removed {count} events",
+    recordingClean: "Recording is already clean",
     recordingConverted: "Recording applied to current sequence",
     recordingProfileCreated: "Profile created from recording",
+    duration: "Duration",
+    moves: "Moves",
+    keysStat: "Keys",
+    mouseStat: "Mouse",
+    cps: "CPS",
     playbackSpeed: "Playback speed",
     schedules: "Scheduled tasks",
     addSchedule: "Add task",
@@ -460,6 +503,7 @@ const translations: Record<Language, Translation> = {
     saturday: "Sat",
     sunday: "Sun",
     graph: "Graphite",
+    cyberpunk: "Cyberpunk",
     sakura: "Sakura",
     forest: "Forest",
     paper: "Paper",
@@ -472,6 +516,8 @@ const translations: Record<Language, Translation> = {
     stepMouseDown: "Mouse down",
     stepMouseUp: "Mouse up",
     stepWheel: "Wheel",
+    moveUp: "Move up",
+    moveDown: "Move down",
     delay: "Delay",
     key: "Key",
     simulated: "Browser preview mode. Desktop commands run inside Tauri.",
@@ -479,6 +525,7 @@ const translations: Record<Language, Translation> = {
 };
 
 const themeLabels: Record<ThemeName, keyof Translation> = {
+  cyberpunk: "cyberpunk",
   graphite: "graph",
   sakura: "sakura",
   forest: "forest",
@@ -500,6 +547,7 @@ const modeLabels: Record<ClickMode, keyof Translation> = {
   double: "double",
   hold: "holdMode",
   burst: "burstMode",
+  keyTap: "keyTapMode",
   sequence: "sequence",
 };
 
@@ -547,17 +595,19 @@ const defaultProfiles: Profile[] = [
   {
     id: "profile-main",
     name: "Daily Tap",
-    accent: "#26b7a0",
+    accent: "#28f7ff",
     button: "Left",
     mode: "single",
     intervalMs: 80,
     initialDelayMs: 300,
     count: 100,
     repeatForever: false,
+    maxDurationMs: 0,
     holdMs: 18,
     jitterMs: 0,
     randomRadius: 0,
     burstSize: 3,
+    tapKey: "Space",
     targetMode: "current",
     x: 640,
     y: 360,
@@ -566,17 +616,19 @@ const defaultProfiles: Profile[] = [
   {
     id: "profile-burst",
     name: "Burst Check",
-    accent: "#ef6f61",
+    accent: "#ff3df2",
     button: "Left",
     mode: "burst",
     intervalMs: 250,
     initialDelayMs: 500,
     count: 20,
     repeatForever: false,
+    maxDurationMs: 0,
     holdMs: 15,
     jitterMs: 12,
     randomRadius: 4,
     burstSize: 5,
+    tapKey: "Space",
     targetMode: "fixed",
     x: 820,
     y: 460,
@@ -597,7 +649,7 @@ const defaultSchedules: ScheduleTask[] = [
 
 const defaultSettings: Settings = {
   language: "zh",
-  theme: "graphite",
+  theme: "cyberpunk",
   font: "MiSans",
   customFont: "MiSans",
   density: "cozy",
@@ -608,6 +660,13 @@ const defaultHotkeys: HotkeyConfig = {
   recordStop: ["F7"],
   playbackStop: ["Escape"],
 };
+
+const normalizeProfile = (profile: Profile): Profile => ({
+  ...profile,
+  maxDurationMs: profile.maxDurationMs ?? 0,
+  tapKey: profile.tapKey ?? "Space",
+  sequence: Array.isArray(profile.sequence) ? profile.sequence : defaultSequence,
+});
 
 const isTauriRuntime = () =>
   typeof window !== "undefined" &&
@@ -689,6 +748,15 @@ const comboToString = (combo: string[]) => combo.join("+");
 const clampNumber = (value: number, min: number, max: number) =>
   Number.isFinite(value) ? Math.min(Math.max(value, min), max) : min;
 
+const formatDuration = (value: number) => {
+  const ms = clampNumber(Math.round(value), 0, 24 * 60 * 60 * 1000);
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)}s`;
+  const minutes = Math.floor(ms / 60_000);
+  const seconds = Math.round((ms % 60_000) / 1000);
+  return `${minutes}m ${seconds}s`;
+};
+
 const actionUsesKey = (action: StepAction) =>
   action === "key" || action === "keyDown" || action === "keyUp" || action === "wheel";
 
@@ -703,6 +771,82 @@ const buttonFromDetail = (detail: string, fallback: MouseButtonName): MouseButto
   if (detail === "Left") return "Left";
   return fallback;
 };
+
+const eventDistance = (a: RecordedInput, b: RecordedInput) => {
+  if (
+    typeof a.x !== "number" ||
+    typeof a.y !== "number" ||
+    typeof b.x !== "number" ||
+    typeof b.y !== "number"
+  ) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return Math.hypot(a.x - b.x, a.y - b.y);
+};
+
+const compactMoveRun = (events: RecordedInput[]) => {
+  if (events.length <= 2) return events.map((event) => ({ ...event }));
+
+  const compacted: RecordedInput[] = [];
+  let carriedDelay = 0;
+  let lastKept: RecordedInput | undefined;
+
+  events.forEach((event, index) => {
+    const candidate = {
+      ...event,
+      delayMs: clampNumber(Math.round(event.delayMs + carriedDelay), 0, 3_600_000),
+    };
+    const isBoundary = index === 0 || index === events.length - 1;
+    const elapsed = lastKept ? candidate.timestampMs - lastKept.timestampMs : Number.POSITIVE_INFINITY;
+    const distance = lastKept ? eventDistance(candidate, lastKept) : Number.POSITIVE_INFINITY;
+    const shouldKeep = isBoundary || elapsed >= 90 || distance >= 64;
+
+    if (shouldKeep) {
+      compacted.push(candidate);
+      carriedDelay = 0;
+      lastKept = candidate;
+      return;
+    }
+
+    carriedDelay += event.delayMs;
+  });
+
+  return compacted;
+};
+
+const optimizeRecordedEvents = (events: RecordedInput[]) => {
+  const optimized: RecordedInput[] = [];
+  let moveRun: RecordedInput[] = [];
+
+  const flushMoves = () => {
+    if (!moveRun.length) return;
+    optimized.push(...compactMoveRun(moveRun));
+    moveRun = [];
+  };
+
+  events.forEach((event) => {
+    if (event.kind === "mouseMove") {
+      moveRun.push(event);
+      return;
+    }
+    flushMoves();
+    optimized.push({ ...event });
+  });
+
+  flushMoves();
+  return optimized;
+};
+
+const summarizeRecording = (events: RecordedInput[]) => ({
+  total: events.length,
+  durationMs: events.reduce((sum, event) => sum + event.delayMs, 0),
+  moves: events.filter((event) => event.kind === "mouseMove").length,
+  keys: events.filter((event) => event.kind.startsWith("key")).length,
+  mouse: events.filter(
+    (event) =>
+      event.kind === "buttonPress" || event.kind === "buttonRelease" || event.kind === "wheel",
+  ).length,
+});
 
 const recordingToSequence = (events: RecordedInput[], base: Profile): ClickStep[] => {
   let lastX = base.x;
@@ -764,7 +908,7 @@ const comboFromKeyEvent = (event: KeyboardEvent) => {
 
 function App() {
   const [profiles, setProfiles] = useState<Profile[]>(() =>
-    readStore("tri.profiles", defaultProfiles),
+    readStore<Profile[]>("tri.profiles", defaultProfiles).map(normalizeProfile),
   );
   const [activeProfileId, setActiveProfileId] = useState(() =>
     readStore("tri.activeProfileId", defaultProfiles[0].id),
@@ -794,6 +938,21 @@ function App() {
     () => profiles.find((profile) => profile.id === activeProfileId) ?? profiles[0],
     [activeProfileId, profiles],
   );
+  const recordingStats = useMemo(() => summarizeRecording(recorded), [recorded]);
+  const optimizedRecordingCount = useMemo(
+    () => (recorded.length ? optimizeRecordedEvents(recorded).length : 0),
+    [recorded],
+  );
+  const estimatedCps = useMemo(() => {
+    if (!activeProfile) return 0;
+    const clicksPerCycle =
+      activeProfile.mode === "double"
+        ? 2
+        : activeProfile.mode === "burst"
+          ? activeProfile.burstSize
+          : 1;
+    return (1000 / Math.max(1, activeProfile.intervalMs)) * clicksPerCycle;
+  }, [activeProfile]);
   const latestRef = useRef({ profiles, schedules, running, activeProfileId });
 
   useEffect(() => {
@@ -865,7 +1024,7 @@ function App() {
           ? backup.activeProfileId
           : backup.profiles[0].id;
 
-        setProfiles(backup.profiles);
+        setProfiles(backup.profiles.map(normalizeProfile));
         setActiveProfileId(nextActiveProfileId);
         setSchedules(backup.schedules);
         setSettings(backup.settings);
@@ -883,10 +1042,12 @@ function App() {
       const config = {
         button: profile.button,
         mode: profile.mode,
+        tapKey: profile.tapKey,
         intervalMs: clampNumber(profile.intervalMs, 1, 3_600_000),
         initialDelayMs: clampNumber(profile.initialDelayMs, 0, 3_600_000),
         count: clampNumber(profile.count, 1, 1_000_000),
         repeatForever: profile.repeatForever,
+        maxDurationMs: clampNumber(profile.maxDurationMs, 0, 86_400_000),
         holdMs: clampNumber(profile.holdMs, 1, 60_000),
         jitterMs: clampNumber(profile.jitterMs, 0, 60_000),
         randomRadius: clampNumber(profile.randomRadius, 0, 9999),
@@ -990,6 +1151,18 @@ function App() {
     },
     [log, t.recordingImportFailed, t.recordingLoaded],
   );
+
+  const optimizeRecording = useCallback(() => {
+    if (!recorded.length) return;
+    const optimized = optimizeRecordedEvents(recorded);
+    const removed = recorded.length - optimized.length;
+    if (removed <= 0) {
+      log(t.recordingClean);
+      return;
+    }
+    setRecorded(optimized);
+    log(t.recordingOptimized.replace("{count}", String(removed)));
+  }, [log, recorded, t.recordingClean, t.recordingOptimized]);
 
   const applyRecordingToSequence = useCallback(() => {
     if (!activeProfile || !recorded.length) return;
@@ -1104,6 +1277,17 @@ function App() {
     updateActiveProfile({
       sequence: activeProfile.sequence.filter((step) => step.id !== id),
     });
+  };
+
+  const moveStep = (id: string, direction: -1 | 1) => {
+    if (!activeProfile) return;
+    const index = activeProfile.sequence.findIndex((step) => step.id === id);
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= activeProfile.sequence.length) return;
+
+    const nextSequence = [...activeProfile.sequence];
+    [nextSequence[index], nextSequence[nextIndex]] = [nextSequence[nextIndex], nextSequence[index]];
+    updateActiveProfile({ sequence: nextSequence });
   };
 
   useEffect(() => {
@@ -1256,7 +1440,23 @@ function App() {
           <div className="status-chip">
             <CircleDot size={16} />
             <span>{running ? t.statusRunning : recording ? t.statusRecording : t.statusReady}</span>
-            <strong>{tickCount}</strong>
+              <strong>{tickCount}</strong>
+            </div>
+          <div className="telemetry-strip">
+            <span>
+              <small>{t.cps}</small>
+              <strong>{estimatedCps.toFixed(1)}</strong>
+            </span>
+            <span>
+              <small>{t.interval}</small>
+              <strong>{activeProfile.intervalMs}ms</strong>
+            </span>
+            <span>
+              <small>{t.runDuration}</small>
+              <strong>
+                {activeProfile.maxDurationMs ? formatDuration(activeProfile.maxDurationMs) : "∞"}
+              </strong>
+            </span>
           </div>
           <div className="quick-actions">
             <button className="ghost-button" onClick={toggleRecording}>
@@ -1312,15 +1512,25 @@ function App() {
                 onChange={(mode) => updateActiveProfile({ mode: mode as ClickMode })}
               />
 
-              <Segmented
-                label={t.button}
-                value={activeProfile.button}
-                options={(Object.keys(buttonLabels) as MouseButtonName[]).map((button) => ({
-                  value: button,
-                  label: t[buttonLabels[button]],
-                }))}
-                onChange={(button) => updateActiveProfile({ button: button as MouseButtonName })}
-              />
+              {activeProfile.mode === "keyTap" ? (
+                <label className="text-field">
+                  <span>{t.tapKey}</span>
+                  <input
+                    value={activeProfile.tapKey}
+                    onChange={(event) => updateActiveProfile({ tapKey: event.target.value })}
+                  />
+                </label>
+              ) : (
+                <Segmented
+                  label={t.button}
+                  value={activeProfile.button}
+                  options={(Object.keys(buttonLabels) as MouseButtonName[]).map((button) => ({
+                    value: button,
+                    label: t[buttonLabels[button]],
+                  }))}
+                  onChange={(button) => updateActiveProfile({ button: button as MouseButtonName })}
+                />
+              )}
 
               <div className="number-grid">
                 <NumberField
@@ -1354,6 +1564,14 @@ function App() {
                   min={1}
                   max={60_000}
                   onChange={(holdMs) => updateActiveProfile({ holdMs })}
+                />
+                <NumberField
+                  label={t.runDuration}
+                  value={activeProfile.maxDurationMs}
+                  suffix="ms"
+                  min={0}
+                  max={86_400_000}
+                  onChange={(maxDurationMs) => updateActiveProfile({ maxDurationMs })}
                 />
               </div>
 
@@ -1459,7 +1677,7 @@ function App() {
                 </button>
               </div>
               <div className="sequence-list">
-                {activeProfile.sequence.map((step) => (
+                {activeProfile.sequence.map((step, index) => (
                   <div className="sequence-row" key={step.id}>
                     <select
                       value={step.action}
@@ -1505,9 +1723,25 @@ function App() {
                         updateStep(step.id, { delayMs: Number(event.target.value) })
                       }
                     />
-                    <button title={t.delete} onClick={() => removeStep(step.id)}>
-                      <Trash2 size={15} />
-                    </button>
+                    <div className="step-actions">
+                      <button
+                        title={t.moveUp}
+                        onClick={() => moveStep(step.id, -1)}
+                        disabled={index === 0}
+                      >
+                        <ChevronUp size={15} />
+                      </button>
+                      <button
+                        title={t.moveDown}
+                        onClick={() => moveStep(step.id, 1)}
+                        disabled={index === activeProfile.sequence.length - 1}
+                      >
+                        <ChevronDown size={15} />
+                      </button>
+                      <button title={t.delete} onClick={() => removeStep(step.id)}>
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1527,6 +1761,28 @@ function App() {
                   {recording ? <Square size={30} /> : <Radio size={34} />}
                 </button>
                 <strong>{recording ? t.statusRecording : t.recordingHint}</strong>
+              </div>
+              <div className="recording-stats">
+                <div>
+                  <span>{t.events}</span>
+                  <strong>{recordingStats.total}</strong>
+                </div>
+                <div>
+                  <span>{t.duration}</span>
+                  <strong>{formatDuration(recordingStats.durationMs)}</strong>
+                </div>
+                <div>
+                  <span>{t.moves}</span>
+                  <strong>{recordingStats.moves}</strong>
+                </div>
+                <div>
+                  <span>{t.keysStat}</span>
+                  <strong>{recordingStats.keys}</strong>
+                </div>
+                <div>
+                  <span>{t.mouseStat}</span>
+                  <strong>{recordingStats.mouse}</strong>
+                </div>
               </div>
               <div className="playback-row">
                 <SliderField
@@ -1559,6 +1815,18 @@ function App() {
                 <button onClick={() => recordingInputRef.current?.click()}>
                   <Upload size={16} />
                   <span>{t.importRecording}</span>
+                </button>
+                <button
+                  onClick={optimizeRecording}
+                  disabled={!recorded.length || optimizedRecordingCount === recorded.length}
+                  title={
+                    recorded.length
+                      ? `${recorded.length} -> ${optimizedRecordingCount}`
+                      : t.optimizeRecording
+                  }
+                >
+                  <Sparkles size={16} />
+                  <span>{t.optimizeRecording}</span>
                 </button>
                 <button onClick={applyRecordingToSequence} disabled={!recorded.length}>
                   <Wand2 size={16} />
