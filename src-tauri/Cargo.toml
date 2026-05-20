@@ -1,6 +1,6 @@
 [package]
 name = "tri-clicker"
-version = "0.1.0"
+version = "0.1.1"
 description = "A multilingual mouse and keyboard automation studio."
 authors = ["Yasaki"]
 edition = "2021"

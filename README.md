@@ -15,6 +15,7 @@ automation needs a clean interface and native performance.
 - Keyboard and mouse recording with playback speed control
 - Multiple profiles and in-app scheduled tasks
 - Press-to-set custom global hotkeys
+- JSON backup and restore for profiles, schedules, settings, and hotkeys
 - Chinese, Japanese, and English UI
 - Theme and font switching with embedded MiSans
 - System tray minimization

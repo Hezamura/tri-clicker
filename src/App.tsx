@@ -7,6 +7,7 @@ import {
   Clock3,
   Copy,
   Crosshair,
+  Download,
   Gauge,
   Keyboard,
   Languages,
@@ -27,6 +28,7 @@ import {
   Square,
   Trash2,
   Type,
+  Upload,
   Video,
   Wand2,
   Zap,
@@ -121,6 +123,16 @@ type Settings = {
   density: "cozy" | "compact";
 };
 
+type BackupPayload = {
+  version: number;
+  exportedAt: string;
+  profiles: Profile[];
+  activeProfileId: string;
+  schedules: ScheduleTask[];
+  settings: Settings;
+  hotkeys: HotkeyConfig;
+};
+
 const translations: Record<Language, Translation> = {
   zh: {
     app: "TriClick Studio",
@@ -193,6 +205,12 @@ const translations: Record<Language, Translation> = {
     activity: "运行日志",
     apply: "应用",
     customFont: "自定义字体名",
+    backup: "备份与恢复",
+    exportBackup: "导出配置",
+    importBackup: "导入配置",
+    backupReady: "配置备份已导出",
+    backupLoaded: "配置备份已导入",
+    importFailed: "配置文件无法导入",
     monday: "一",
     tuesday: "二",
     wednesday: "三",
@@ -283,6 +301,12 @@ const translations: Record<Language, Translation> = {
     activity: "ログ",
     apply: "適用",
     customFont: "カスタムフォント名",
+    backup: "バックアップと復元",
+    exportBackup: "設定を書き出す",
+    importBackup: "設定を読み込む",
+    backupReady: "設定を書き出しました",
+    backupLoaded: "設定を読み込みました",
+    importFailed: "設定ファイルを読み込めません",
     monday: "月",
     tuesday: "火",
     wednesday: "水",
@@ -373,6 +397,12 @@ const translations: Record<Language, Translation> = {
     activity: "Activity",
     apply: "Apply",
     customFont: "Custom font name",
+    backup: "Backup and restore",
+    exportBackup: "Export backup",
+    importBackup: "Import backup",
+    backupReady: "Backup exported",
+    backupLoaded: "Backup imported",
+    importFailed: "Could not import backup",
     monday: "Mon",
     tuesday: "Tue",
     wednesday: "Wed",
@@ -538,6 +568,19 @@ const writeStore = <T,>(key: string, value: T) => {
   }
 };
 
+const isBackupPayload = (value: unknown): value is BackupPayload => {
+  if (!value || typeof value !== "object") return false;
+  const backup = value as Partial<BackupPayload>;
+  return (
+    Array.isArray(backup.profiles) &&
+    backup.profiles.length > 0 &&
+    typeof backup.activeProfileId === "string" &&
+    Array.isArray(backup.schedules) &&
+    Boolean(backup.settings) &&
+    Boolean(backup.hotkeys)
+  );
+};
+
 const comboToString = (combo: string[]) => combo.join("+");
 
 const clampNumber = (value: number, min: number, max: number) =>
@@ -590,6 +633,7 @@ function App() {
   const [activity, setActivity] = useState<string[]>([]);
   const [tickCount, setTickCount] = useState(0);
   const [previewNotice, setPreviewNotice] = useState(!isTauriRuntime());
+  const backupInputRef = useRef<HTMLInputElement>(null);
 
   const t = translations[settings.language];
   const activeProfile = useMemo(
@@ -637,6 +681,57 @@ function App() {
       await safeInvoke("set_hotkey_capture", { active }, undefined);
     },
     [safeInvoke],
+  );
+
+  const exportBackup = useCallback(() => {
+    const backup: BackupPayload = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      profiles,
+      activeProfileId,
+      schedules,
+      settings,
+      hotkeys,
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `triclick-backup-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    log(t.backupReady);
+  }, [activeProfileId, hotkeys, log, profiles, schedules, settings, t.backupReady]);
+
+  const importBackup = useCallback(
+    async (file: File) => {
+      try {
+        const backup = JSON.parse(await file.text()) as unknown;
+        if (!isBackupPayload(backup)) {
+          throw new Error("Invalid backup payload.");
+        }
+
+        const nextActiveProfileId = backup.profiles.some(
+          (profile) => profile.id === backup.activeProfileId,
+        )
+          ? backup.activeProfileId
+          : backup.profiles[0].id;
+
+        setProfiles(backup.profiles);
+        setActiveProfileId(nextActiveProfileId);
+        setSchedules(backup.schedules);
+        setSettings(backup.settings);
+        await syncHotkeys(backup.hotkeys);
+        log(t.backupLoaded);
+      } catch {
+        log(t.importFailed);
+      }
+    },
+    [log, syncHotkeys, t.backupLoaded, t.importFailed],
   );
 
   const startProfile = useCallback(
@@ -1463,6 +1558,36 @@ function App() {
                 cancelLabel={t.cancel}
                 onCaptureChange={setHotkeyCapture}
                 onChange={(combo) => syncHotkeys({ ...hotkeys, playbackStop: combo })}
+              />
+            </section>
+
+            <section className="panel">
+              <div className="panel-heading">
+                <ClipboardList size={18} />
+                <h2>{t.backup}</h2>
+              </div>
+              <div className="backup-actions">
+                <button onClick={exportBackup}>
+                  <Download size={16} />
+                  <span>{t.exportBackup}</span>
+                </button>
+                <button onClick={() => backupInputRef.current?.click()}>
+                  <Upload size={16} />
+                  <span>{t.importBackup}</span>
+                </button>
+              </div>
+              <input
+                ref={backupInputRef}
+                className="backup-input"
+                type="file"
+                accept="application/json,.json"
+                onChange={(event) => {
+                  const file = event.target.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) {
+                    void importBackup(file);
+                  }
+                }}
               />
             </section>
           </div>

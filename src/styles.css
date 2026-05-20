@@ -782,6 +782,29 @@ input[type="color"] {
   padding: 0 10px;
 }
 
+.backup-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.backup-actions button {
+  justify-content: flex-start;
+  min-width: 0;
+  padding: 0 12px;
+}
+
+.backup-actions span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backup-input {
+  display: none;
+}
+
 .activity-panel {
   min-width: 0;
   padding: 14px;
